@@ -2,6 +2,7 @@ import fastify from "fastify";
 import postgres from "postgres";
 import { z } from "zod";
 import { sql } from "./lib/postgres";
+import { redis } from "./lib/redis";
 
 const app = fastify();
 
@@ -26,6 +27,8 @@ app.get("/:code", async (request, reply) => {
   if (result.length === 0) {
     return reply.status(400).send({ message: "Link not found" });
   }
+
+  await redis.zIncrBy("metrics", 1, String(link.id));
 
   return reply.redirect(301, link.original_url);
 });
@@ -69,6 +72,19 @@ app.post("/api/links", async (request, reply) => {
 
     return reply.status(500).send({ message: "Internal error." });
   }
+});
+
+app.get("/api/metrics", async () => {
+  const result = await redis.zRangeByScoreWithScores("metrics", 0, 50);
+  const metrics = result
+    .sort((a, b) => b.score - a.score)
+    .map((item) => {
+      return {
+        shortLinkId: Number(item.value),
+        clicks: item.score,
+      };
+    });
+  return metrics;
 });
 
 app
